@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">mainSnow</string>
+    <string name="wallpaper_name">mainSnow — Snowfall</string>
+    <string name="wallpaper_description">Тёмно-синий фон с пиксельным снегопадом.</string>
+    <string name="open_wallpaper_settings">Установить живые обои</string>
+    <string name="app_description">Пиксельный снегопад на главном экране.</string>
+    <string name="wallpaper_unavailable">На этом устройстве не удалось открыть настройки живых обоев.</string>
+    <string name="bee_wallpaper_name">mainSnow — Bee</string>
+    <string name="bee_wallpaper_description">Пчела в стиле Minecraft на цветочном лугу: день, вечер и ночь.</string>
+    <string name="room_wallpaper_name">mainSnow — Рождественская комната</string>
+    <string name="room_wallpaper_description">Уютная рождественская комната в стиле Minecraft: камин, ёлка, кресло-качалка и снег за окном.</string>
+</resources>
