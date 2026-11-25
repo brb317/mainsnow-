@@ -1,0 +1,100 @@
+name: Build mainSnow APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# Новый запуск отменяет предыдущий на той же ветке.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Ищем папку с settings.gradle(.kts): в корне репозитория или во вложенной.
+      - name: Locate Gradle project
+        id: locate
+        run: |
+          echo "Файлы в репозитории:"
+          find . -maxdepth 4 -not -path "./.git/*" -not -path "./.git" | sort
+          file=$(find . -maxdepth 5 \( -name settings.gradle.kts -o -name settings.gradle \) \
+                 -not -path "./.git/*" | sort | head -n 1)
+          if [ -z "$file" ]; then
+            if find . -maxdepth 2 -name "*.zip" -not -path "./.git/*" | grep -q .; then
+              echo "::error::В репозитории лежит .zip. Распакуй архив и загрузи его содержимое (app, build.gradle.kts, settings.gradle.kts и т.д.), а не сам zip."
+            else
+              echo "::error::settings.gradle(.kts) не найден. Загрузи содержимое проекта: папку app и файлы build.gradle.kts, settings.gradle.kts, gradle.properties."
+            fi
+            exit 1
+          fi
+          dir=$(dirname "$file")
+          echo "Gradle project: $dir"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      # Кэш Gradle включён по умолчанию в этом действии.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+          build-root-directory: ${{ steps.locate.outputs.dir }}
+
+      - name: Build debug APK
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: gradle assembleDebug --console=plain
+
+      - name: Name the APK
+        run: |
+          mkdir -p dist
+          cp "${{ steps.locate.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk" \
+             "dist/mainSnow-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mainsnow-debug-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  # Тег вида v1.0 -> релиз на GitHub с готовым APK.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mainsnow-debug-apk
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "mainSnow $GITHUB_REF_NAME" \
+            --generate-notes
