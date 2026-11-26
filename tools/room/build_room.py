@@ -35,7 +35,6 @@ def shell():
     S((12, 0, 0), (12.5, 6, 12), {'nx': ['wallplank', 'wallplankB']}, var=0.10, skip=only('nx'), key=4)
     S((0, 0, 12), (12, 6, 12.5), {'nz': ['wallplank', 'wallplankB']}, var=0.10, skip=only('nz'), key=5)
     # left wall (x=0) with window opening  y 1.2..4.6, z 0.9..5.3
-    WZ0, WZ1, WY0, WY1 = 0.9, 5.3, 1.2, 4.6
     lw = {'px': ['wallplank', 'wallplankB']}
     S((-0.5, 0, 0), (0, WY0, 12), lw, var=0.10, skip=only('px'), key=6)
     S((-0.5, WY1, 0), (0, 6, 12), lw, var=0.10, skip=only('px'), key=7)
@@ -67,7 +66,6 @@ def shell():
 
 # ======================================================================= window + outdoors
 def window():
-    WZ0, WZ1, WY0, WY1 = 0.9, 5.3, 1.2, 4.6
     fr = {'all': 'trim'}
     t0, t1 = -0.30, -0.10
     # frame outer
@@ -93,12 +91,12 @@ def window():
     S((-0.5, WY0, WZ0), (-0.3, WY1, WZ0 + 0.01), {'pz': 'wallplank'}, skip=only('pz'), occ=False)
     S((-0.5, WY0 + 0.0, WZ0), (-0.3, WY0 + 0.01, WZ1), {'py': 'wallplank'}, skip=only('py'), occ=False)
     # curtain rod + curtain at the near side
-    S((0.04, 4.95, 5.2), (0.2, 5.03, 6.9), {'all': 'iron_dark'})
+    S((0.04, 4.95, WZ1 - 0.1), (0.2, 5.03, WZ1 + 1.6), {'all': 'iron_dark'})
     for k in range(0, 5):
-        zc = 5.35 + k * 0.28
+        zc = WZ1 + 0.05 + k * 0.28
         S((0.05, 0.35 + 0.02 * (k % 2), zc), (0.18 + 0.05 * (k % 2), 4.95, zc + 0.28), {'all': 'curtain'}, key=40 + k, skip=('ny',))
     # candle on the sill
-    S((0.12, WY0 + 0.04, 4.6), (0.3, WY0 + 0.44, 4.78), {'side': 'candle_side', 'py': 'candle_top'})
+    S((0.12, WY0 + 0.04, WZ1 - 0.8), (0.3, WY0 + 0.44, WZ1 - 0.62), {'side': 'candle_side', 'py': 'candle_top'})
 
 
 def outdoors():
@@ -133,15 +131,17 @@ def outdoors():
 
     rr = random.Random(11)
     trees = []
-    for x, z, h, w in [(-4.0, -5.0, 6.5, 1.6), (-6.0, -2.2, 7.5, 1.9), (-5.5, 1.5, 6.0, 1.5), (-3.2, -0.6, 5.0, 1.2),
+    for x, z, h, w in [(xx, zz + 4.0, hh, ww) for (xx, zz, hh, ww) in [(-4.0, -5.0, 6.5, 1.6), (-6.0, -2.2, 7.5, 1.9), (-5.5, 1.5, 6.0, 1.5), (-3.2, -0.6, 5.0, 1.2),
                        (-8.0, -6.5, 8.0, 2.0), (-8.5, 0.0, 7.0, 1.8), (-10.5, -3.5, 8.5, 2.1), (-11.0, 2.5, 7.0, 1.8),
                        (-7.0, -10.0, 7.5, 1.9), (-13.0, -8.0, 9.0, 2.2), (-13.5, -1.0, 8.0, 2.0), (-4.5, -9.0, 6.0, 1.5),
-                       (-9.5, -13.0, 8.0, 2.0), (-15.0, -5.0, 9.0, 2.2), (-2.5, 4.5, 4.5, 1.1)]:
+                       (-9.5, -13.0, 8.0, 2.0), (-15.0, -5.0, 9.0, 2.2), (-2.5, 4.5, 4.5, 1.1)]]:
         spruce(x, z, h, w)
 
 
 # ======================================================================= fireplace
 IT = (0.85, 0.96, 1.25)
+WZ0, WZ1, WY0, WY1 = 1.9, 5.9, 1.2, 4.6      # окно на левой стене
+TCX, TCZ = 1.15, 1.2                          # ёлка стоит в углу
 FX0, FX1 = 3.5, 5.7      # firebox opening x
 FCX = 4.6
 
@@ -260,11 +260,10 @@ def gift(x, z, w, h, d, col, rot=False, y=0.0):
 
 
 def gifts():
-    gift(2.9, 4.85, 0.8, 0.62, 0.8, 'red')
-    gift(3.55, 5.5, 0.6, 0.45, 0.6, 'green')
-    gift(3.1, 4.95, 0.45, 0.4, 0.45, 'gold', y=0.62)
-    gift(0.8, 5.2, 0.7, 0.5, 0.75, 'blue')
-    gift(1.5, 5.45, 0.5, 0.36, 0.5, 'red')
+    gift(0.35, 2.45, 0.7, 0.55, 0.7, 'red')
+    gift(1.2, 2.75, 0.55, 0.42, 0.55, 'green')
+    gift(0.45, 3.35, 0.5, 0.4, 0.5, 'blue')
+    gift(0.5, 2.55, 0.4, 0.34, 0.4, 'gold', y=0.55)
     gift(7.75, 2.25, 0.65, 0.5, 0.65, 'green')
     gift(8.5, 2.5, 0.5, 0.38, 0.5, 'gold')
     gift(8.1, 8.5, 0.62, 0.5, 0.62, 'red')
@@ -362,13 +361,13 @@ def string_lights():
 
 # ======================================================================= tree
 def tree():
-    cx, cz = 2.0, 3.5
+    cx, cz = TCX, TCZ
     rr = random.Random(21)
-    S((cx - 0.25, 0, cz - 0.25), (cx + 0.25, 1.0, cz + 0.25), {'side': 'log_v', 'py': 'log_end'})
-    n, lh, y = 12, 0.34, 0.55
+    S((cx - 0.2, 0, cz - 0.2), (cx + 0.2, 1.0, cz + 0.2), {'side': 'log_v', 'py': 'log_end'})
+    n, lh, y = 12, 0.36, 0.55
     layers = []
     for i in range(n):
-        w = 1.45 - i * 0.115 + (0.24 if i % 3 == 0 else 0.0)
+        w = 0.98 - i * 0.07 + (0.15 if i % 3 == 0 else 0.0)
         S((cx - w, y, cz - w), (cx + w, y + lh, cz + w), {'all': 'wreath_leaf'}, var=0.08, key=100 + i)
         layers.append((w, y))
         y += lh
@@ -378,7 +377,7 @@ def tree():
         for face in range(4):
             cnt = 6 if face in (0, 2) else 2
             for k in range(cnt):
-                o = rr.uniform(-w + 0.1, w - 0.1)
+                o = rr.uniform(-w + 0.06, w - 0.06)
                 yy = y0 + rr.uniform(0.04, lh - 0.12)
                 g = 'treeA' if (li + k) % 2 == 0 else 'treeB'
                 tile = 'light_warm' if rr.random() < 0.8 else 'light_red'
@@ -494,7 +493,7 @@ def main():
     POINTS['lanternpiv'] = (6.0, 5.45, 5.8)
     fox()
     POINTS.update({'mug': (6.47 + CHAIR_SHIFT[0], 1.5, 7.41 + CHAIR_SHIFT[1]), 'chairpiv': (6.4 + CHAIR_SHIFT[0], 0.0, 8.4 + CHAIR_SHIFT[1]), 'chairax': (0.91, 0.0, -0.42),
-                   'fire': (4.6, 0.45, 0.95), 'candle4': (0.21, 1.64, 4.69), 'candle5': (10.3, 3.58, 0.25)})
+                   'fire': (4.6, 0.45, 0.95), 'candle4': (0.21, 1.64, WZ1 - 0.71), 'candle5': (10.3, 3.58, 0.25)})
     sc.finish()
     groups = export_static(sc)
     nstat = len(groups)
@@ -520,9 +519,9 @@ def main():
         (6.0, 4.4, 5.8, 1.5, 0.95, 0.45, 9.0, 0.05),
         (2.3, 4.0, 1.5, 1.0, 0.6, 0.28, 5.5, 0.18),
         (6.5, 4.0, 1.5, 1.0, 0.6, 0.28, 5.5, 0.18),
-        (2.0, 2.8, 3.5, 0.8, 0.62, 0.26, 6.5, 0.08),
+        (1.15, 2.7, 1.25, 0.8, 0.62, 0.26, 6.5, 0.08),
         (10.32, 0.9, 8.9, 1.3, 0.8, 0.36, 5.0, 0.04),
-        (0.8, 3.0, 3.0, 0.2, 0.32, 0.75, 8.0, 0.0),
+        (0.8, 3.0, 3.9, 0.2, 0.32, 0.75, 8.0, 0.0),
         (8.0, 1.4, 7.0, 0.5, 0.3, 0.14, 3.5, 0.15)]
     halos = [
         (6.0, 4.3, 5.8, 1.0, 0.7, 0.3, 1.5),
@@ -530,7 +529,7 @@ def main():
         (6.5, 4.0, 1.5, 1.0, 0.65, 0.3, 0.7),
         (10.32, 0.85, 8.9, 1.0, 0.7, 0.3, 1.5),
         (4.6, 1.4, 1.0, 1.0, 0.55, 0.2, 3.2),
-        (2.0, 5.4, 3.5, 1.0, 0.85, 0.4, 1.4)]
+        (1.15, 5.45, 1.2, 1.0, 0.85, 0.4, 1.4)]
     size = write_room(OUT + 'room.bin', groups, lights, halos, POINTS)
     print('written room.bin', size, 'bytes')
     for g in groups:

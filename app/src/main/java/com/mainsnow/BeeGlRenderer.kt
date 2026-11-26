@@ -54,6 +54,13 @@ internal class BeeGlRenderer(private val context: Context) {
             0f, 1f, 0f, 8f, 19f, 1.00f, 0.96f, 0.70f
         )
 
+        val ENV_MORNING = floatArrayOf(
+            0.30f, 0.50f, 0.85f, 1.00f, 0.78f, 0.62f,
+            0.65f, 0.45f, 0.50f, 1.00f, 0.84f, 0.66f,
+            0.44f, 0.46f, 0.58f,
+            0f, 1f, 0f, 6f, 9f, 1.00f, 0.84f, 0.52f
+        )
+
         val ENV_EVENING = floatArrayOf(
             0.20f, 0.18f, 0.42f, 1.00f, 0.56f, 0.30f,
             -0.75f, 0.30f, 0.35f, 1.00f, 0.58f, 0.32f,
@@ -73,7 +80,7 @@ internal class BeeGlRenderer(private val context: Context) {
         const val SKY_Z = -42f
         const val STAR_COUNT = 90
         const val POINT_FLOATS = 8
-        const val MAX_POINTS = STAR_COUNT + 14 * 3 + 48 + 24
+        const val MAX_POINTS = STAR_COUNT + 14 * 3 + 48 + 24 + 120
     }
 
     private val thread = HandlerThread("bee-gl").apply { start() }
@@ -100,6 +107,7 @@ internal class BeeGlRenderer(private val context: Context) {
     private var sunMesh: GlMesh? = null
     private var moonMesh: GlMesh? = null
     private var bee: GltfBee? = null
+    private var baby: BabyBee? = null
     private var skyVbo = 0
     private var pointVbo = 0
     private var maxPoint = 64f
@@ -178,10 +186,10 @@ internal class BeeGlRenderer(private val context: Context) {
         }
     }
 
-    fun setTime(time: BeeTime) {
+    fun setTime(time: BeeTime, natural: Boolean = false) {
         handler.post {
             startTime = time
-            brain?.setTime(time)
+            brain?.setTime(time, natural)
             envTarget = envFor(time)
         }
     }
@@ -215,6 +223,7 @@ internal class BeeGlRenderer(private val context: Context) {
     // ---- EGL и ресурсы (только на GL-потоке) ----
 
     private fun envFor(time: BeeTime) = when (time) {
+        BeeTime.MORNING -> ENV_MORNING
         BeeTime.DAY -> ENV_DAY
         BeeTime.EVENING -> ENV_EVENING
         BeeTime.NIGHT -> ENV_NIGHT
@@ -296,6 +305,12 @@ internal class BeeGlRenderer(private val context: Context) {
         sunMesh = BeeScene.buildSun()
         moonMesh = BeeScene.buildMoon()
         bee = GltfBee(context, "bee")
+        baby = try {
+            BabyBee(context)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Baby Bee не загрузилась", e)
+            null
+        }
 
         val ids = IntArray(2)
         GLES20.glGenBuffers(2, ids, 0)
@@ -325,6 +340,7 @@ internal class BeeGlRenderer(private val context: Context) {
                 EGL14.eglMakeCurrent(dpy, surf, surf, ctx)
 
                 bee?.release()
+                baby?.release()
                 world?.delete()
                 sunMesh?.delete()
                 moonMesh?.delete()
@@ -345,7 +361,7 @@ internal class BeeGlRenderer(private val context: Context) {
             EGL14.eglTerminate(dpy)
         }
 
-        bee = null; world = null; sunMesh = null; moonMesh = null
+        bee = null; baby = null; world = null; sunMesh = null; moonMesh = null
         lit = null; sky = null; points = null
         emote = null; emoteTex = 0
         skyVbo = 0; pointVbo = 0
@@ -642,9 +658,18 @@ internal class BeeGlRenderer(private val context: Context) {
         Matrix.rotateM(model, 0, Math.toDegrees(b.yaw.toDouble()).toFloat(), 0f, 1f, 0f)
         Matrix.rotateM(model, 0, Math.toDegrees(b.pitch.toDouble()).toFloat(), 1f, 0f, 0f)
         Matrix.rotateM(model, 0, Math.toDegrees(b.roll.toDouble()).toFloat(), 0f, 0f, 1f)
-        Matrix.scaleM(model, 0, BeeBrain.SCALE, BeeBrain.SCALE * b.breath, BeeBrain.SCALE)
+        Matrix.scaleM(model, 0, BeeBrain.SCALE * b.sizeK, BeeBrain.SCALE * b.breath * b.sizeK, BeeBrain.SCALE * b.sizeK)
 
         val beeMatrix = model.copyOf()
+
+        // Утром вместо взрослой рисуется Baby Bee.
+        val babyModel = baby
+
+        if (b.babyMode && babyModel != null) {
+            GLES20.glUniform1f(p.u("uTwoSided"), 1f)
+            babyModel.draw(p, beeMatrix, clock, b.pose.flap > 0.25f && b.pose.fold < 0.5f, b.pose.fold > 0.5f, b.glow)
+            return
+        }
 
         // Лицо: глаза и румянец красятся в текстуре, брови двигаются отдельно.
         bee.setFace(b.eyeL, b.eyeR, b.blush)
@@ -738,7 +763,18 @@ internal class BeeGlRenderer(private val context: Context) {
         for (q in b.pollen) {
             if (q.life <= 0f) continue
 
-            n = addPoint(n, q.x, q.y, q.z, 1.0f, 0.85f, 0.25f, (q.life / q.max).coerceIn(0f, 1f), 0.06f)
+            val qa = (q.life / q.max).coerceIn(0f, 1f)
+
+            if (q.kind == 2) {
+                n = addPoint(n, q.x, q.y, q.z, 0.45f, 1.0f, 0.40f, qa, 0.10f)
+            } else {
+                n = addPoint(n, q.x, q.y, q.z, 1.0f, 0.85f, 0.25f, qa, 0.06f)
+            }
+        }
+
+        // Зелёное свечение вокруг пчелы при взрослении.
+        if (b.glow > 0.02f) {
+            n = addPoint(n, b.x, b.y + 0.05f, b.z, 0.4f, 1.0f, 0.35f, 0.35f * b.glow, 0.9f)
         }
 
         if (n == 0) return

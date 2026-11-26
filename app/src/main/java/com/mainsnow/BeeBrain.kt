@@ -298,11 +298,31 @@ internal class BeeBrain(
     private enum class Phase {
         PATH, GOTO, IDLE, DESCEND, FEED, RISE, AWAY, GREET, DANCE,
         PERCH, NOTICE, APPROACH, PLAY, SEARCH, SAD, DIZZY, SHAKE_OFF,
-        TIRED, SLEEP_GOTO, SLEEP_LAND, SLEEP, WAKE
+        TIRED, SLEEP_GOTO, SLEEP_LAND, SLEEP, WAKE, GROW
     }
 
     var mode: BeeTime = startMode
         private set
+
+    // Утром пчела маленькая. Взрослой она становится только сама: при смене утра на день по часам.
+    var babyMode = startMode == BeeTime.MORNING
+        private set
+
+    // Зелёное свечение и размер во время взросления.
+    var glow = 0f
+        private set
+    var sizeK = 1f
+        private set
+
+    private var growPending = false
+    private var growWait = 0f
+    private var growX = 0f
+    private var growY = 0f
+    private var growZ = 0f
+    private var growSwapped = false
+    private var sparkAcc = 0f
+
+    private val dayLike: Boolean get() = mode == BeeTime.DAY || mode == BeeTime.MORNING
 
     // Поза.
     var x = 0f; private set
@@ -480,6 +500,13 @@ internal class BeeBrain(
                 begin(Phase.AWAY)
             }
 
+            BeeTime.MORNING -> {
+                // Малыш, как и днём, влетает в кадр по настоящей камере.
+                x = 0f; y = 60f; z = 0f
+                awayDur = 0f
+                begin(Phase.AWAY)
+            }
+
             BeeTime.EVENING -> {
                 // Вечер начинается с того, что пчела сидит на цветке.
                 cur = 1
@@ -562,6 +589,7 @@ internal class BeeBrain(
     private fun emitPollen(px: Float, py: Float, pz: Float) {
         val p = if (pollen.size < 48) Pollen().also { pollen.add(it) } else pollen.firstOrNull { it.life <= 0f } ?: return
 
+        p.kind = 0
         p.x = px + rnd(-0.12f, 0.12f)
         p.y = py + 0.03f
         p.z = pz + rnd(-0.12f, 0.12f)
@@ -711,25 +739,88 @@ internal class BeeBrain(
 
     // ---- Переходы ----
 
-    fun setTime(m: BeeTime) {
+    // natural = true только когда период сменился сам, по часам, в автоматическом режиме.
+    fun setTime(m: BeeTime, natural: Boolean = false) {
         if (m == mode) return
 
+        val old = mode
         val sleeping = phase == Phase.SLEEP || phase == Phase.SLEEP_LAND || phase == Phase.SLEEP_GOTO
+        val grows = m == BeeTime.DAY && old == BeeTime.MORNING && natural && babyMode
+
         mode = m
+        glow = 0f
+        sizeK = 1f
+
+        if (!grows) growPending = false
 
         when (m) {
-            BeeTime.NIGHT -> if (!sleeping) {
-                // Ночь начинается с конца игры: быстро устаёт, ложится и засыпает.
-                tireE = 1f
-                bumpArmed = false
-                path.clear()
-                begin(Phase.TIRED)
+            BeeTime.NIGHT -> {
+                babyMode = false
+
+                if (!sleeping) {
+                    // Ночь начинается с конца игры: быстро устаёт, ложится и засыпает.
+                    tireE = 1f
+                    bumpArmed = false
+                    path.clear()
+                    begin(Phase.TIRED)
+                }
             }
 
-            BeeTime.EVENING -> if (sleeping) startWake() else if (phase != Phase.DANCE) startPerch()
+            BeeTime.EVENING -> {
+                babyMode = false
 
-            BeeTime.DAY -> if (sleeping) startWake() else if (phase != Phase.DANCE) startGoto(false)
+                if (sleeping) startWake() else if (phase != Phase.DANCE) startPerch()
+            }
+
+            BeeTime.DAY -> {
+                if (grows) {
+                    // Малыш сначала заканчивает своё дело, потом растёт (startGoto запустит взросление).
+                    growPending = true
+                    growWait = 0f
+                } else {
+                    babyMode = false
+
+                    if (sleeping) startWake() else if (phase != Phase.DANCE) startGoto(false)
+                }
+            }
+
+            BeeTime.MORNING -> {
+                // Утром всегда малыш, и он остаётся малышом, пока время не сменится само.
+                babyMode = true
+                path.clear()
+                vx = 0f; vy = 0f; vz = 0f
+                x = 0f; y = 60f; z = 0f
+                awayDur = 0f
+                begin(Phase.AWAY)
+            }
         }
+    }
+
+    private fun startGrow() {
+        growPending = false
+        growSwapped = false
+        growX = x
+        growY = y
+        growZ = z
+        sparkAcc = 0f
+        begin(Phase.GROW)
+    }
+
+    // Зелёная искорка, как при взрослении мобов в Minecraft.
+    private fun emitSpark() {
+        val p = if (pollen.size < 110) Pollen().also { pollen.add(it) } else pollen.firstOrNull { it.life <= 0f } ?: return
+        val a = rnd(0f, TWO_PI_F)
+        val r = rnd(0.08f, 0.36f)
+
+        p.kind = 2
+        p.x = x + cos(a) * r
+        p.y = y + rnd(-0.1f, 0.35f)
+        p.z = z + sin(a) * r
+        p.vx = cos(a) * rnd(0.1f, 0.45f)
+        p.vy = rnd(0.25f, 0.8f)
+        p.vz = sin(a) * rnd(0.1f, 0.45f)
+        p.max = rnd(0.7f, 1.3f)
+        p.life = p.max
     }
 
     // Проснувшийся на цветке шмель сначала разогревается дрожью, на лету просыпается сразу.
@@ -795,6 +886,12 @@ internal class BeeBrain(
     }
 
     private fun startGoto(spawn: Boolean) {
+        // Пора взрослеть: прошлое действие закончено, пчела в воздухе.
+        if (growPending && !spawn && phase != Phase.AWAY) {
+            startGrow()
+            return
+        }
+
         // Из-за кадра (ожидание или смена времени суток) всегда влетает в кадр заново.
         val entry = spawn || phase == Phase.AWAY
 
@@ -950,6 +1047,17 @@ internal class BeeBrain(
     }
 
     private fun arriveAtFlower() {
+        if (babyMode) {
+            // Малыш нектар не собирает: зависает у цветка, разглядывает его и летит дальше.
+            idleDur = rnd(2.4f, 4.6f)
+            idleNext = Phase.GOTO
+            begin(Phase.IDLE)
+
+            if (Random.nextFloat() < 0.35f) emit(Emote.HEART)
+
+            return
+        }
+
         if (!perching && Random.nextFloat() < 0.45f) {
             // Сначала любуется цветком, потом садится.
             idleDur = rnd(1.1f, 2.2f)
@@ -1072,7 +1180,14 @@ internal class BeeBrain(
 
         if (danceCool > 0f) danceCool -= dt
 
-        val speedF = 0.85f + 0.3f * energy
+        // Если подходящего момента долго нет, взросление начинается на лету.
+        if (growPending && phase != Phase.GROW) {
+            growWait += dt
+
+            if (growWait > 28f && (phase == Phase.IDLE || phase == Phase.GOTO || phase == Phase.PATH)) startGrow()
+        }
+
+        val speedF = (0.85f + 0.3f * energy) * (if (babyMode) 0.55f else 1f)
 
         var animSpeed = 2.4f
         var faceYaw = Float.NaN
@@ -1131,6 +1246,66 @@ internal class BeeBrain(
                 }
 
                 if (d < 0.1f) arriveAtFlower()
+            }
+
+            Phase.GROW -> {
+                // Взросление: малыш зависает, вокруг зелёное свечение и искры, потом на его месте
+                // появляется взрослая пчела и расправляется. Целиком занимает около 3.4 секунды.
+                animSpeed = 2.4f
+                flapRate = 19f
+                antPerkT = 0.5f
+
+                fly(growX, growY + sin(phaseT * 2.4f) * 0.04f, growZ, 0.5f, 3f, dt)
+
+                val k = phaseT
+
+                shiver = if (k < 2f) 0.35f * (k / 2f) else 0f
+
+                when {
+                    k < 0.8f -> {
+                        glow = 0.6f * (k / 0.8f)
+                        sizeK = 1f + 0.12f * (k / 0.8f)
+                    }
+
+                    k < 2f -> {
+                        val u = (k - 0.8f) / 1.2f
+
+                        glow = 0.6f + 0.4f * u
+                        sizeK = 1.12f + 0.3f * u * u
+                    }
+
+                    k < 3f -> {
+                        if (!growSwapped) {
+                            growSwapped = true
+                            babyMode = false
+                            repeat(36) { emitSpark() }
+                        }
+
+                        val u = k - 2f
+
+                        glow = 1f - u
+                        sizeK = 0.78f + 0.22f * (u * u * (3f - 2f * u))
+                    }
+
+                    else -> {
+                        glow = 0f
+                        sizeK = 1f
+                    }
+                }
+
+                sparkAcc += dt * (if (k < 2f) 18f + 30f * k / 2f else 16f)
+
+                while (sparkAcc >= 1f) {
+                    sparkAcc -= 1f
+                    emitSpark()
+                }
+
+                if (k >= 3.4f) {
+                    glow = 0f
+                    sizeK = 1f
+                    babyMode = false
+                    startGoto(false)
+                }
             }
 
             Phase.IDLE -> {
@@ -1441,7 +1616,7 @@ internal class BeeBrain(
                     if (danceT > danceDur) {
                         danceCool = rnd(25f, 45f)
 
-                        if (mode == BeeTime.DAY) startGoto(false) else pickPlay()
+                        if (dayLike) startGoto(false) else pickPlay()
                     }
                 }
             }
@@ -1952,7 +2127,7 @@ internal class BeeBrain(
                 )
 
                 if (d < 0.12f && phaseT > (if (wakeWarm) 2.9f else 1.2f)) {
-                    if (mode == BeeTime.DAY) startGoto(false) else pickPlay()
+                    if (dayLike) startGoto(false) else pickPlay()
                 }
             }
         }
@@ -2132,7 +2307,7 @@ internal class BeeBrain(
         // Ночью светлячки кружат вокруг спального цветка, в остальное время — по всему лугу.
         val night = mode == BeeTime.NIGHT
         swarm.update(
-            t, dt, mode != BeeTime.DAY, night,
+            t, dt, !dayLike, night,
             if (night) sleepX else x, if (night) sleepY else y, if (night) sleepZ else z
         )
     }

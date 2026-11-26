@@ -40,6 +40,7 @@ class MainActivity : Activity() {
     private val beeTimeButtons = mutableMapOf<BeeTime, Button>()
 
     private lateinit var wallpaperButton: Button
+    private lateinit var beeAutoButton: Button
 
     private lateinit var customColorInput: EditText
     private lateinit var imageStatus: TextView
@@ -130,10 +131,20 @@ class MainActivity : Activity() {
 
         addSectionTitle(content, "Пчела: время суток")
 
+        beeAutoButton = createButton("Авто (по времени телефона)")
+
+        beeAutoButton.setOnClickListener {
+            SnowSettings.setBeeAuto(this, true)
+            updateSelections()
+        }
+
+        addButton(content, beeAutoButton)
+
         BeeTime.values().forEach { time ->
             val button = createButton(time.title)
 
             button.setOnClickListener {
+                SnowSettings.setBeeAuto(this, false)
                 SnowSettings.setBeeTime(this, time)
                 updateSelections()
             }
@@ -812,8 +823,17 @@ class MainActivity : Activity() {
             )
         }
 
+        val beeAuto = SnowSettings.getBeeAuto(this)
+
+        if (::beeAutoButton.isInitialized) {
+            beeAutoButton.text = if (beeAuto) "✓  Авто (по времени телефона)" else "Авто (по времени телефона)"
+            beeAutoButton.backgroundTintList = ColorStateList.valueOf(
+                if (beeAuto) selectedColor else normalColor
+            )
+        }
+
         beeTimeButtons.forEach { (time, button) ->
-            val selected = time == currentBeeTime
+            val selected = !beeAuto && time == currentBeeTime
 
             button.text = if (selected) "✓  ${time.title}" else time.title
             button.backgroundTintList = ColorStateList.valueOf(

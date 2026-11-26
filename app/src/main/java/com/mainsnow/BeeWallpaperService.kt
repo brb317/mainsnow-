@@ -1,6 +1,9 @@
 package com.mainsnow
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.media.AudioManager
 import android.os.Handler
@@ -33,10 +36,45 @@ class BeeWallpaperService : WallpaperService() {
             }
         }
 
+        // Автоматический режим следит за часами телефона: раз в 10 секунд и по системным сигналам
+        // смены времени (минутный тик, ручной перевод часов, смена пояса).
+        private var applied: BeeTime? = null
+
+        private val timeReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                checkClock()
+            }
+        }
+
+        private val clockPoll = object : Runnable {
+            override fun run() {
+                checkClock()
+
+                if (visibleNow) handler.postDelayed(this, 10_000L)
+            }
+        }
+
+        private fun checkClock() {
+            if (!SnowSettings.getBeeAuto(this@BeeWallpaperService)) return
+
+            val t = SnowSettings.beeTimeForNow()
+
+            if (t != applied) {
+                applied = t
+                gl?.setTime(t, true)
+            }
+        }
+
         override fun onCreate(surfaceHolder: SurfaceHolder) {
             super.onCreate(surfaceHolder)
             setTouchEventsEnabled(false)
             prefs.registerOnSharedPreferenceChangeListener(this)
+
+            val filter = IntentFilter()
+            filter.addAction(Intent.ACTION_TIME_TICK)
+            filter.addAction(Intent.ACTION_TIME_CHANGED)
+            filter.addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            registerReceiver(timeReceiver, filter)
         }
 
         override fun onSurfaceCreated(holder: SurfaceHolder) {
@@ -44,13 +82,18 @@ class BeeWallpaperService : WallpaperService() {
 
             gl?.release()
 
+            val startTime = SnowSettings.resolveBeeTime(this@BeeWallpaperService)
+            applied = startTime
+
             gl = BeeGlRenderer(applicationContext).also {
-                it.start(holder.surface, SnowSettings.getBeeTime(this@BeeWallpaperService))
+                it.start(holder.surface, startTime)
                 it.setVisible(visibleNow)
             }
 
             handler.removeCallbacks(musicPoll)
+            handler.removeCallbacks(clockPoll)
             if (visibleNow) handler.post(musicPoll)
+            if (visibleNow) handler.post(clockPoll)
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
@@ -58,11 +101,14 @@ class BeeWallpaperService : WallpaperService() {
             gl?.setVisible(visible)
 
             handler.removeCallbacks(musicPoll)
+            handler.removeCallbacks(clockPoll)
             if (visible) handler.post(musicPoll)
+            if (visible) handler.post(clockPoll)
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             handler.removeCallbacks(musicPoll)
+            handler.removeCallbacks(clockPoll)
             gl?.release()
             gl = null
             super.onSurfaceDestroyed(holder)
@@ -70,6 +116,14 @@ class BeeWallpaperService : WallpaperService() {
 
         override fun onDestroy() {
             handler.removeCallbacks(musicPoll)
+            handler.removeCallbacks(clockPoll)
+
+            try {
+                unregisterReceiver(timeReceiver)
+            } catch (e: Throwable) {
+                // Уже снят.
+            }
+
             prefs.unregisterOnSharedPreferenceChangeListener(this)
             gl?.release()
             gl = null
@@ -77,8 +131,11 @@ class BeeWallpaperService : WallpaperService() {
         }
 
         override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-            if (key == null || key == "bee_time") {
-                gl?.setTime(SnowSettings.getBeeTime(this@BeeWallpaperService))
+            if (key == null || key == "bee_time" || key == "bee_auto") {
+                // Выбор в меню: ручное состояние сразу фиксируется, взросление не запускается.
+                val t = SnowSettings.resolveBeeTime(this@BeeWallpaperService)
+                applied = t
+                gl?.setTime(t, false)
             }
 
         }

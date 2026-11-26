@@ -17,6 +17,7 @@ enum class BeeTime(
     val key: String,
     val title: String
 ) {
+    MORNING("morning", "Утро"),
     DAY("day", "День"),
     EVENING("evening", "Вечер"),
     NIGHT("night", "Ночь")
@@ -112,6 +113,32 @@ object SnowSettings {
             .putString("bee_time", time.key)
             .apply()
     }
+
+    // Автоматический режим: время суток берётся из часов телефона. Ручной выбор не зависит от часов.
+    fun getBeeAuto(context: Context): Boolean =
+        getPreferences(context).getBoolean("bee_auto", false)
+
+    fun setBeeAuto(context: Context, auto: Boolean) {
+        getPreferences(context).edit()
+            .putBoolean("bee_auto", auto)
+            .apply()
+    }
+
+    // 05:00-09:00 утро, 09:00-17:00 день, 17:00-21:00 вечер, 21:00-05:00 ночь.
+    fun beeTimeForNow(): BeeTime {
+        val c = java.util.Calendar.getInstance()
+        val minutes = c.get(java.util.Calendar.HOUR_OF_DAY) * 60 + c.get(java.util.Calendar.MINUTE)
+
+        return when {
+            minutes in 300 until 540 -> BeeTime.MORNING
+            minutes in 540 until 1020 -> BeeTime.DAY
+            minutes in 1020 until 1260 -> BeeTime.EVENING
+            else -> BeeTime.NIGHT
+        }
+    }
+
+    fun resolveBeeTime(context: Context): BeeTime =
+        if (getBeeAuto(context)) beeTimeForNow() else getBeeTime(context)
 
     fun getBackground(context: Context): SnowBackground {
         val savedKey = getPreferences(context).getString(

@@ -416,7 +416,7 @@ internal class RoomGlRenderer(private val context: Context) {
     // Снег за окном: область перед окном на улице, видна только через стекло.
     private fun resetSnow(i: Int, anywhere: Boolean) {
         sx[i] = -12f + rnd.nextFloat() * 11.6f
-        sz[i] = -12f + rnd.nextFloat() * 16f
+        sz[i] = -9f + rnd.nextFloat() * 14f
         sy[i] = if (anywhere) 0.2f + rnd.nextFloat() * 9f else 9f + rnd.nextFloat() * 1.5f
     }
 
